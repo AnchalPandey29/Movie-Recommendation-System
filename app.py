@@ -28,7 +28,7 @@ watchlist = load_watchlist()
 def fetch_movie(name):
     url = f"http://www.omdbapi.com/?t={name}&apikey=thewdb"
     data = requests.get(url).json()
-    return data if data["Response"] == "True" else None
+    return data if data.get("Response") == "True" else None
 
 def get_youtube_embed(movie):
     query = movie.replace(" ", "+") + "+trailer"
@@ -37,12 +37,7 @@ def get_youtube_embed(movie):
 # ---------------- STYLE ----------------
 st.markdown("""
 <style>
-
-.block-container {
-    padding: 1.5rem 3rem;
-}
-
-/* HERO */
+.block-container { padding: 1.5rem 3rem; }
 .hero {
     padding: 30px;
     border-radius: 20px;
@@ -50,8 +45,6 @@ st.markdown("""
     color: white;
     margin-bottom: 30px;
 }
-
-/* CARD */
 .card {
     background: #111827;
     padding: 15px;
@@ -59,43 +52,19 @@ st.markdown("""
     margin-bottom: 20px;
     color: white;
     box-shadow: 0 6px 20px rgba(0,0,0,0.5);
-    transition: 0.3s;
 }
-.card:hover {
-    transform: translateY(-5px);
-}
-
-/* TITLE */
-.title {
-    font-size: 18px;
-    font-weight: 600;
-}
-
-/* META */
-.meta {
-    color: #9ca3af;
-    font-size: 14px;
-}
-
-/* SEARCH */
+.title { font-size: 18px; font-weight: 600; }
+.meta { color: #9ca3af; font-size: 14px; }
 .stTextInput input {
     background-color: #111827 !important;
     color: white !important;
     border-radius: 10px;
 }
-
-/* BUTTON */
 .stButton button {
     background: linear-gradient(90deg,#6366f1,#8b5cf6);
     color: white;
     border-radius: 10px;
 }
-
-/* SECTION */
-.section {
-    margin-top: 30px;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -103,8 +72,15 @@ st.markdown("""
 @st.cache_data
 def load_data():
     df = pd.read_csv("movies.csv")
-    df["Summary"] = df["Summary"].fillna("").str.lower()
-    df["Film Name"] = df["Film Name"].str.strip()
+
+    # 🔥 SAME CLEANING AS NOTEBOOK
+    df["Film Name"] = df["Film Name"].str.replace(r"[^a-zA-Z\s]", "", regex=True)
+    df["Film Name"] = df["Film Name"].str.lower().str.strip()
+
+    df["Summary"] = df["Summary"].fillna("").str.lower().str.strip()
+
+    df = df.dropna(subset=["Summary"]).reset_index(drop=True)
+
     return df
 
 df = load_data()
@@ -123,34 +99,48 @@ def load_model(data):
 matrix, knn = load_model(df)
 
 # ---------------- RECOMMEND ----------------
-def recommend(movie):
-    movie = movie.lower().strip()
+def clean_input(text):
+    return "".join([c for c in text.lower() if c.isalpha() or c.isspace()]).strip()
 
-    if movie not in df["Film Name"].str.lower().values:
+def recommend(movie):
+    movie = clean_input(movie)
+
+    matches = df[df["Film Name"].str.contains(movie)]
+
+    if matches.empty:
         return None
 
-    idx = df[df["Film Name"].str.lower() == movie].index[0]
+    idx = matches.index[0]
+
     _, indices = knn.kneighbors(matrix[idx])
 
-    return [df.iloc[i]["Film Name"] for i in indices[0][1:]]
+    results = []
+    for i in indices[0][1:]:
+        results.append(df.iloc[i]["Film Name"].title())
+
+    return results
 
 # ---------------- HERO ----------------
 st.markdown("""
 <div class="hero">
     <h1>🎬 Movie Recommendation System</h1>
-    <p>AI-powered movie suggestions with trailers, details & watchlist</p>
+    <p>AI-powered movie suggestions with trailers & watchlist</p>
 </div>
 """, unsafe_allow_html=True)
 
 # ---------------- SEARCH ----------------
-search = st.text_input("🔍 Search your favorite movie")
+search_input = st.text_input("🔍 Search your favorite movie")
+
+search = ""
+if search_input:
+    search = clean_input(search_input)
 
 # 🔍 Suggestions
 if search:
-    suggestions = df[df["Film Name"].str.lower().str.contains(search.lower())]["Film Name"].head(5)
+    suggestions = df[df["Film Name"].str.contains(search)]["Film Name"].head(5)
 
     for s in suggestions:
-        if st.button(s):
+        if st.button(s.title()):
             search = s
 
 # ---------------- RESULTS ----------------
@@ -162,14 +152,14 @@ if search:
     else:
         st.markdown("## 🎯 Recommendations")
 
-        for movie in recs:
+        for i, movie in enumerate(recs):
             data = fetch_movie(movie)
 
             if data:
                 col1, col2 = st.columns([1,2])
 
                 with col1:
-                    if data["Poster"] != "N/A":
+                    if data.get("Poster") != "N/A":
                         st.image(data["Poster"])
 
                 with col2:
@@ -186,14 +176,14 @@ if search:
                     st.markdown("#### 🎥 Trailer")
                     st.components.v1.iframe(get_youtube_embed(movie), height=300)
 
-                    # ❤️ Watchlist
+                    # ❤️ Watchlist (unique keys fix)
                     if movie not in watchlist:
-                        if st.button(f"❤️ Add to Watchlist - {movie}"):
+                        if st.button(f"❤️ Add - {movie}", key=f"add_{i}"):
                             watchlist.append(movie)
                             save_watchlist(watchlist)
-                            st.success("Added to Watchlist")
+                            st.success("Added!")
                     else:
-                        if st.button(f"❌ Remove - {movie}"):
+                        if st.button(f"❌ Remove - {movie}", key=f"remove_{i}"):
                             watchlist.remove(movie)
                             save_watchlist(watchlist)
                             st.warning("Removed")
@@ -208,7 +198,7 @@ if watchlist:
         data = fetch_movie(movie)
 
         with cols[i % 4]:
-            if data and data["Poster"] != "N/A":
+            if data and data.get("Poster") != "N/A":
                 st.image(data["Poster"])
 
             st.markdown(f"""
