@@ -9,6 +9,14 @@ from sklearn.neighbors import NearestNeighbors
 st.set_page_config(page_title="Movie AI", layout="wide")
 
 WATCHLIST_FILE = "watchlist.json"
+PLACEHOLDER = "https://via.placeholder.com/300x450?text=No+Image"
+
+# ---------------- SESSION PAGE ----------------
+if "page" not in st.session_state:
+    st.session_state.page = "home"
+
+if "selected_movie" not in st.session_state:
+    st.session_state.selected_movie = ""
 
 # ---------------- WATCHLIST ----------------
 def load_watchlist():
@@ -30,14 +38,16 @@ def fetch_movie(name):
     data = requests.get(url).json()
     return data if data.get("Response") == "True" else None
 
-def get_youtube_embed(movie):
+# ✅ FIXED TRAILER (real embed)
+def get_trailer(movie):
     query = movie.replace(" ", "+") + "+trailer"
-    return f"https://www.youtube.com/embed?listType=search&list={query}"
+    return f"https://www.youtube.com/results?search_query={query}"
 
 # ---------------- STYLE ----------------
 st.markdown("""
 <style>
 .block-container { padding: 1.5rem 3rem; }
+
 .hero {
     padding: 30px;
     border-radius: 20px;
@@ -45,21 +55,18 @@ st.markdown("""
     color: white;
     margin-bottom: 30px;
 }
+
 .card {
     background: #111827;
     padding: 15px;
     border-radius: 15px;
-    margin-bottom: 20px;
     color: white;
     box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    text-align: center;
 }
+
 .title { font-size: 18px; font-weight: 600; }
-.meta { color: #9ca3af; font-size: 14px; }
-.stTextInput input {
-    background-color: #111827 !important;
-    color: white !important;
-    border-radius: 10px;
-}
+
 .stButton button {
     background: linear-gradient(90deg,#6366f1,#8b5cf6);
     color: white;
@@ -73,13 +80,10 @@ st.markdown("""
 def load_data():
     df = pd.read_csv("movies.csv")
 
-    # 🔥 SAME CLEANING AS NOTEBOOK
     df["Film Name"] = df["Film Name"].str.replace(r"[^a-zA-Z\s]", "", regex=True)
     df["Film Name"] = df["Film Name"].str.lower().str.strip()
 
     df["Summary"] = df["Summary"].fillna("").str.lower().str.strip()
-
-    df = df.dropna(subset=["Summary"]).reset_index(drop=True)
 
     return df
 
@@ -100,7 +104,7 @@ matrix, knn = load_model(df)
 
 # ---------------- RECOMMEND ----------------
 def clean_input(text):
-    return "".join([c for c in text.lower() if c.isalpha() or c.isspace()]).strip()
+    return "".join([c for c in text.lower() if c.isalpha() or c.isspace()])
 
 def recommend(movie):
     movie = clean_input(movie)
@@ -114,97 +118,106 @@ def recommend(movie):
 
     _, indices = knn.kneighbors(matrix[idx])
 
-    results = []
-    for i in indices[0][1:]:
-        results.append(df.iloc[i]["Film Name"].title())
+    return [df.iloc[i]["Film Name"].title() for i in indices[0][1:]]
 
-    return results
+# ---------------- HOME PAGE ----------------
+if st.session_state.page == "home":
 
-# ---------------- HERO ----------------
-st.markdown("""
-<div class="hero">
-    <h1>🎬 Movie Recommendation System</h1>
-    <p>AI-powered movie suggestions with trailers & watchlist</p>
-</div>
-""", unsafe_allow_html=True)
+    st.markdown("""
+    <div class="hero">
+        <h1>🎬 Movie Recommendation System</h1>
+        <p>Discover movies with AI</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ---------------- SEARCH ----------------
-search_input = st.text_input("🔍 Search your favorite movie")
+    search = st.text_input("🔍 Search movie")
 
-search = ""
-if search_input:
-    search = clean_input(search_input)
+    if search:
+        recs = recommend(search)
 
-# 🔍 Suggestions
-if search:
-    suggestions = df[df["Film Name"].str.contains(search)]["Film Name"].head(5)
+        if recs:
+            st.markdown("## 🎯 Recommendations")
 
-    for s in suggestions:
-        if st.button(s.title()):
-            search = s
+            cols = st.columns(5)
 
-# ---------------- RESULTS ----------------
-if search:
-    recs = recommend(search)
+            for i, movie in enumerate(recs):
+                data = fetch_movie(movie)
 
-    if recs is None:
-        st.error("Movie not found in dataset")
-    else:
-        st.markdown("## 🎯 Recommendations")
+                poster = PLACEHOLDER
+                if data and data.get("Poster") != "N/A":
+                    poster = data["Poster"]
 
-        for i, movie in enumerate(recs):
-            data = fetch_movie(movie)
+                with cols[i % 5]:
+                    st.image(poster)
 
-            if data:
-                col1, col2 = st.columns([1,2])
-
-                with col1:
-                    if data.get("Poster") != "N/A":
-                        st.image(data["Poster"])
-
-                with col2:
                     st.markdown(f"""
                     <div class="card">
                         <div class="title">{movie}</div>
-                        <div class="meta">⭐ {data.get("imdbRating","N/A")} | 🎭 {data.get("Genre","")}</div>
-                        <div class="meta">📅 {data.get("Year","")} | ⏱ {data.get("Runtime","")}</div>
-                        <p>{data.get("Plot","")}</p>
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # 🎬 Trailer
-                    st.markdown("#### 🎥 Trailer")
-                    st.components.v1.iframe(get_youtube_embed(movie), height=300)
+                    # 🔥 OPEN DETAILS PAGE
+                    if st.button("View", key=f"view_{i}"):
+                        st.session_state.selected_movie = movie
+                        st.session_state.page = "details"
 
-                    # ❤️ Watchlist (unique keys fix)
-                    if movie not in watchlist:
-                        if st.button(f"❤️ Add - {movie}", key=f"add_{i}"):
-                            watchlist.append(movie)
-                            save_watchlist(watchlist)
-                            st.success("Added!")
-                    else:
-                        if st.button(f"❌ Remove - {movie}", key=f"remove_{i}"):
-                            watchlist.remove(movie)
-                            save_watchlist(watchlist)
-                            st.warning("Removed")
+# ---------------- DETAILS PAGE ----------------
+if st.session_state.page == "details":
+
+    movie = st.session_state.selected_movie
+    data = fetch_movie(movie)
+
+    st.button("⬅ Back", on_click=lambda: st.session_state.update({"page": "home"}))
+
+    if data:
+        col1, col2 = st.columns([1,2])
+
+        poster = PLACEHOLDER
+        if data.get("Poster") != "N/A":
+            poster = data["Poster"]
+
+        with col1:
+            st.image(poster)
+
+        with col2:
+            st.title(movie)
+            st.write(f"⭐ {data.get('imdbRating','N/A')}")
+            st.write(f"🎭 {data.get('Genre','')}")
+            st.write(f"📅 {data.get('Year','')}")
+            st.write(f"⏱ {data.get('Runtime','')}")
+            st.write(data.get("Plot",""))
+
+            # 🎬 Trailer (FIXED)
+            st.markdown("### 🎥 Trailer")
+            st.markdown(f"[▶ Watch Trailer]({get_trailer(movie)})")
+
+            # ❤️ Watchlist
+            if movie not in watchlist:
+                if st.button("❤️ Add to Watchlist"):
+                    watchlist.append(movie)
+                    save_watchlist(watchlist)
+                    st.success("Added!")
+            else:
+                if st.button("❌ Remove from Watchlist"):
+                    watchlist.remove(movie)
+                    save_watchlist(watchlist)
+                    st.warning("Removed")
 
 # ---------------- WATCHLIST ----------------
-st.markdown("## ❤️ Your Watchlist")
+st.markdown("## ❤️ Watchlist")
 
 if watchlist:
-    cols = st.columns(4)
+    cols = st.columns(5)
 
     for i, movie in enumerate(watchlist):
         data = fetch_movie(movie)
 
-        with cols[i % 4]:
-            if data and data.get("Poster") != "N/A":
-                st.image(data["Poster"])
+        poster = PLACEHOLDER
+        if data and data.get("Poster") != "N/A":
+            poster = data["Poster"]
 
-            st.markdown(f"""
-            <div class="card">
-                <div class="title">{movie}</div>
-            </div>
-            """, unsafe_allow_html=True)
+        with cols[i % 5]:
+            st.image(poster)
+            st.write(movie)
 else:
-    st.info("No movies in watchlist yet")
+    st.info("No movies yet")
