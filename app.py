@@ -30,55 +30,101 @@ def fetch_movie(name):
     data = requests.get(url).json()
     return data if data["Response"] == "True" else None
 
-def get_trailer(movie):
+def get_youtube_embed(movie):
     query = movie.replace(" ", "+") + "+trailer"
-    return f"https://www.youtube.com/results?search_query={query}"
+    return f"https://www.youtube.com/embed?listType=search&list={query}"
 
-# ---------------- CSS ----------------
+# ---------------- STYLE ----------------
 st.markdown("""
 <style>
 
-/* Scroll row */
-.scroll {
-    display:flex;
-    overflow-x:auto;
-    gap:15px;
-    padding:10px;
+.block-container {
+    padding: 1.5rem 3rem;
 }
 
-.movie {
-    min-width:200px;
-    transition:0.3s;
+/* HERO */
+.hero {
+    padding: 30px;
+    border-radius: 20px;
+    background: linear-gradient(135deg,#0f172a,#020617);
+    color: white;
+    margin-bottom: 30px;
 }
-.movie:hover { transform:scale(1.1); }
+
+/* CARD */
+.card {
+    background: #111827;
+    padding: 15px;
+    border-radius: 15px;
+    margin-bottom: 20px;
+    color: white;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    transition: 0.3s;
+}
+.card:hover {
+    transform: translateY(-5px);
+}
+
+/* TITLE */
+.title {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+/* META */
+.meta {
+    color: #9ca3af;
+    font-size: 14px;
+}
+
+/* SEARCH */
+.stTextInput input {
+    background-color: #111827 !important;
+    color: white !important;
+    border-radius: 10px;
+}
+
+/* BUTTON */
+.stButton button {
+    background: linear-gradient(90deg,#6366f1,#8b5cf6);
+    color: white;
+    border-radius: 10px;
+}
+
+/* SECTION */
+.section {
+    margin-top: 30px;
+}
 
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------- DATA ----------------
 @st.cache_data
-def load():
+def load_data():
     df = pd.read_csv("movies.csv")
     df["Summary"] = df["Summary"].fillna("").str.lower()
+    df["Film Name"] = df["Film Name"].str.strip()
     return df
 
-df = load()
+df = load_data()
 
 # ---------------- MODEL ----------------
 @st.cache_resource
-def model(data):
+def load_model(data):
     tfidf = TfidfVectorizer(stop_words="english")
     matrix = tfidf.fit_transform(data["Summary"])
 
     knn = NearestNeighbors(n_neighbors=6, metric="cosine")
     knn.fit(matrix)
+
     return matrix, knn
 
-matrix, knn = model(df)
+matrix, knn = load_model(df)
 
 # ---------------- RECOMMEND ----------------
 def recommend(movie):
-    movie = movie.lower()
+    movie = movie.lower().strip()
 
     if movie not in df["Film Name"].str.lower().values:
         return None
@@ -88,23 +134,33 @@ def recommend(movie):
 
     return [df.iloc[i]["Film Name"] for i in indices[0][1:]]
 
-# ---------------- SEARCH SUGGEST ----------------
-query = st.text_input("🔍 Search movie")
+# ---------------- HERO ----------------
+st.markdown("""
+<div class="hero">
+    <h1>🎬 Movie Recommendation System</h1>
+    <p>AI-powered movie suggestions with trailers, details & watchlist</p>
+</div>
+""", unsafe_allow_html=True)
 
-suggestions = []
-if query:
-    suggestions = df[df["Film Name"].str.lower().str.contains(query.lower())]["Film Name"].head(5)
+# ---------------- SEARCH ----------------
+search = st.text_input("🔍 Search your favorite movie")
 
-for s in suggestions:
-    if st.button(s):
-        query = s
+# 🔍 Suggestions
+if search:
+    suggestions = df[df["Film Name"].str.lower().str.contains(search.lower())]["Film Name"].head(5)
 
-# ---------------- RECOMMEND ----------------
-if query:
-    recs = recommend(query)
+    for s in suggestions:
+        if st.button(s):
+            search = s
 
-    if recs:
-        st.subheader("🎯 Recommendations")
+# ---------------- RESULTS ----------------
+if search:
+    recs = recommend(search)
+
+    if recs is None:
+        st.error("Movie not found in dataset")
+    else:
+        st.markdown("## 🎯 Recommendations")
 
         for movie in recs:
             data = fetch_movie(movie)
@@ -117,30 +173,48 @@ if query:
                         st.image(data["Poster"])
 
                 with col2:
-                    st.markdown(f"### {movie}")
-                    st.write(data["Plot"])
+                    st.markdown(f"""
+                    <div class="card">
+                        <div class="title">{movie}</div>
+                        <div class="meta">⭐ {data.get("imdbRating","N/A")} | 🎭 {data.get("Genre","")}</div>
+                        <div class="meta">📅 {data.get("Year","")} | ⏱ {data.get("Runtime","")}</div>
+                        <p>{data.get("Plot","")}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
                     # 🎬 Trailer
-                    st.markdown(f"[▶ Watch Trailer]({get_trailer(movie)})")
+                    st.markdown("#### 🎥 Trailer")
+                    st.components.v1.iframe(get_youtube_embed(movie), height=300)
 
                     # ❤️ Watchlist
                     if movie not in watchlist:
                         if st.button(f"❤️ Add to Watchlist - {movie}"):
                             watchlist.append(movie)
                             save_watchlist(watchlist)
-                            st.success("Added!")
+                            st.success("Added to Watchlist")
                     else:
                         if st.button(f"❌ Remove - {movie}"):
                             watchlist.remove(movie)
                             save_watchlist(watchlist)
                             st.warning("Removed")
 
-# ---------------- WATCHLIST VIEW ----------------
-st.markdown("---")
-st.subheader("❤️ Your Watchlist")
+# ---------------- WATCHLIST ----------------
+st.markdown("## ❤️ Your Watchlist")
 
 if watchlist:
-    for movie in watchlist:
-        st.write("🎬", movie)
+    cols = st.columns(4)
+
+    for i, movie in enumerate(watchlist):
+        data = fetch_movie(movie)
+
+        with cols[i % 4]:
+            if data and data["Poster"] != "N/A":
+                st.image(data["Poster"])
+
+            st.markdown(f"""
+            <div class="card">
+                <div class="title">{movie}</div>
+            </div>
+            """, unsafe_allow_html=True)
 else:
-    st.write("No movies yet")
+    st.info("No movies in watchlist yet")
