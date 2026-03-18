@@ -38,7 +38,6 @@ def fetch_movie(name):
     except:
         return None
 
-# ✅ EMBED TRAILER FIX
 def get_trailer_embed(movie):
     query = movie.replace(" ", "+") + "+trailer"
     return f"https://www.youtube.com/embed?listType=search&list={query}"
@@ -46,29 +45,69 @@ def get_trailer_embed(movie):
 # ---------------- STYLE ----------------
 st.markdown("""
 <style>
+
+/* HERO */
 .hero {
-    padding: 30px;
+    padding: 40px;
     border-radius: 20px;
-    background: linear-gradient(135deg,#0f172a,#020617);
+    background: linear-gradient(135deg,#1e293b,#020617);
     color: white;
     text-align: center;
-    margin-bottom: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
 }
 
-.card {
-    background: #111827;
-    padding: 12px;
+/* SEARCH */
+.stTextInput {
+    display: flex;
+    justify-content: center;
+}
+.stTextInput input {
+    width: 60%;
     border-radius: 12px;
-    color: white;
-    text-align: center;
+    padding: 10px;
 }
 
+/* CARD */
+.card {
+    background: rgba(17,24,39,0.85);
+    backdrop-filter: blur(10px);
+    padding: 12px;
+    border-radius: 15px;
+    color: white;
+    text-align: center;
+    transition: 0.3s;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+}
+.card:hover {
+    transform: scale(1.05);
+}
+
+/* DETAILS PANEL */
 .details-box {
-    background: #f3f4f6;
+    background: #f9fafb;
+    padding: 25px;
+    border-radius: 20px;
+    margin-top: 25px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+
+/* BUTTON */
+.stButton button {
+    background: linear-gradient(90deg,#6366f1,#8b5cf6);
+    color: white;
+    border-radius: 10px;
+    border: none;
+}
+
+/* ANALYTICS CARD */
+.analytics-card {
+    background: white;
     padding: 20px;
     border-radius: 15px;
-    margin-top: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.1);
 }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -120,12 +159,12 @@ def recommend(movie):
 st.markdown("""
 <div class="hero">
     <h1>🎬 Movie Recommendation System</h1>
-    <p>Discover movies with AI-powered suggestions</p>
+    <p>Discover movies intelligently with AI</p>
 </div>
 """, unsafe_allow_html=True)
 
 # ---------------- SEARCH ----------------
-search = st.text_input("🔍 Search for a movie")
+search = st.text_input("🔍 Search your movie")
 
 # ---------------- TABS ----------------
 tab1, tab2, tab3 = st.tabs(["🎯 Recommendations", "❤️ Watchlist", "📊 Analytics"])
@@ -149,12 +188,12 @@ with tab1:
                 with cols[i % 5]:
                     st.image(poster)
 
-                    st.markdown(f"<div class='card'>{movie}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='card'><b>{movie}</b></div>", unsafe_allow_html=True)
 
-                    if st.button("View Details", key=f"view_{i}"):
+                    if st.button("🎬 View", key=f"view_{i}"):
                         st.session_state.selected_movie = movie
 
-    # ✅ DETAILS PANEL
+    # DETAILS PANEL
     if st.session_state.selected_movie:
         movie = st.session_state.selected_movie
         data = fetch_movie(movie)
@@ -172,16 +211,15 @@ with tab1:
                 st.image(poster)
 
             with col2:
-                st.subheader(movie)
-                st.write(f"⭐ {data.get('imdbRating','N/A')}")
-                st.write(f"🎭 {data.get('Genre','')}")
-                st.write(f"📅 {data.get('Year','')}")
+                st.title(movie)
+                st.markdown(f"⭐ **{data.get('imdbRating','N/A')}**")
+                st.markdown(f"🎭 {data.get('Genre','')}")
+                st.markdown(f"📅 {data.get('Year','')}")
                 st.write(data.get("Plot",""))
 
                 st.markdown("### 🎥 Trailer")
                 st.components.v1.iframe(get_trailer_embed(movie), height=300)
 
-                # Watchlist
                 if movie not in watchlist:
                     if st.button("❤️ Add to Watchlist"):
                         watchlist.append(movie)
@@ -211,7 +249,7 @@ with tab2:
 
             with cols[i % 5]:
                 st.image(poster)
-                st.write(movie)
+                st.markdown(f"<div class='card'>{movie}</div>", unsafe_allow_html=True)
     else:
         st.info("No movies yet")
 
@@ -225,10 +263,14 @@ with tab3:
     col1, col2 = st.columns(2)
 
     with col1:
+        st.markdown("<div class='analytics-card'>", unsafe_allow_html=True)
         st.markdown("### Ratings Distribution")
         st.bar_chart(df_plot["Ratings"].value_counts().sort_index())
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
+        st.markdown("<div class='analytics-card'>", unsafe_allow_html=True)
         st.markdown("### Top Rated Movies")
         top = df_plot.sort_values(by="Ratings", ascending=False).head(10)
         st.dataframe(top[["Film Name", "Ratings"]])
+        st.markdown("</div>", unsafe_allow_html=True)
