@@ -39,8 +39,12 @@ def fetch_movie(name):
         return None
 
 def get_trailer_embed(movie):
-    query = movie.replace(" ", "+") + "+trailer"
+    query = movie.replace(" ", "+") + "+official+trailer"
     return f"https://www.youtube.com/embed?listType=search&list={query}"
+
+def get_trailer_link(movie):
+    query = movie.replace(" ", "+") + "+official+trailer"
+    return f"https://www.youtube.com/results?search_query={query}"
 
 # ---------------- STYLE ----------------
 st.markdown("""
@@ -54,30 +58,23 @@ st.markdown("""
     color: white;
     text-align: center;
     margin-bottom: 30px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
 }
 
 /* SEARCH */
-.stTextInput {
-    display: flex;
-    justify-content: center;
-}
 .stTextInput input {
-    width: 60%;
     border-radius: 12px;
     padding: 10px;
 }
 
 /* CARD */
 .card {
-    background: rgba(17,24,39,0.85);
-    backdrop-filter: blur(10px);
+    background: rgba(17,24,39,0.9);
     padding: 12px;
     border-radius: 15px;
     color: white;
     text-align: center;
     transition: 0.3s;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
 }
 .card:hover {
     transform: scale(1.05);
@@ -85,11 +82,18 @@ st.markdown("""
 
 /* DETAILS PANEL */
 .details-box {
-    background: #f9fafb;
+    background: #f3f4f6;
     padding: 25px;
     border-radius: 20px;
     margin-top: 25px;
-    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+
+/* ANALYTICS */
+.analytics-card {
+    background: white;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.1);
 }
 
 /* BUTTON */
@@ -97,15 +101,6 @@ st.markdown("""
     background: linear-gradient(90deg,#6366f1,#8b5cf6);
     color: white;
     border-radius: 10px;
-    border: none;
-}
-
-/* ANALYTICS CARD */
-.analytics-card {
-    background: white;
-    padding: 20px;
-    border-radius: 15px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.1);
 }
 
 </style>
@@ -188,7 +183,17 @@ with tab1:
                 with cols[i % 5]:
                     st.image(poster)
 
-                    st.markdown(f"<div class='card'><b>{movie}</b></div>", unsafe_allow_html=True)
+                    if data:
+                        st.markdown(f"""
+                        <div class='card'>
+                            <b>{movie}</b><br>
+                            ⭐ {data.get('imdbRating','N/A')}<br>
+                            🎭 {data.get('Genre','')}<br>
+                            📅 {data.get('Year','')}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<div class='card'><b>{movie}</b></div>", unsafe_allow_html=True)
 
                     if st.button("🎬 View", key=f"view_{i}"):
                         st.session_state.selected_movie = movie
@@ -218,6 +223,7 @@ with tab1:
                 st.write(data.get("Plot",""))
 
                 st.markdown("### 🎥 Trailer")
+                st.markdown(f"[▶ Watch Trailer]({get_trailer_link(movie)})")
                 st.components.v1.iframe(get_trailer_embed(movie), height=300)
 
                 if movie not in watchlist:
@@ -260,6 +266,14 @@ with tab3:
     df_plot = pd.read_csv("movies.csv")
     df_plot["Ratings"] = pd.to_numeric(df_plot["Ratings"], errors="coerce")
 
+    # METRICS
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Movies", len(df_plot))
+    m2.metric("Average Rating", round(df_plot["Ratings"].mean(),2))
+    m3.metric("Max Rating", df_plot["Ratings"].max())
+
+    st.markdown("---")
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -271,6 +285,15 @@ with tab3:
     with col2:
         st.markdown("<div class='analytics-card'>", unsafe_allow_html=True)
         st.markdown("### Top Rated Movies")
+
         top = df_plot.sort_values(by="Ratings", ascending=False).head(10)
-        st.dataframe(top[["Film Name", "Ratings"]])
+
+        for _, row in top.iterrows():
+            st.markdown(f"""
+            <div class='card'>
+                <b>{row['Film Name']}</b><br>
+                ⭐ {row['Ratings']}
+            </div>
+            """, unsafe_allow_html=True)
+
         st.markdown("</div>", unsafe_allow_html=True)
