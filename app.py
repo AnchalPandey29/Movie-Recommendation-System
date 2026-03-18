@@ -5,167 +5,197 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="🎬 Movie Recommender", layout="wide")
+st.set_page_config(page_title="Netflix AI", layout="wide")
 
-# ---------------- OMDB FREE API ----------------
-def fetch_movie_data(movie_name):
-    url = f"http://www.omdbapi.com/?t={movie_name}&apikey=thewdb"
+# ---------------- API ----------------
+def fetch_movie(name):
+    url = f"http://www.omdbapi.com/?t={name}&apikey=thewdb"
     data = requests.get(url).json()
-
-    if data["Response"] == "True":
-        return {
-            "poster": data["Poster"],
-            "plot": data["Plot"],
-            "genre": data["Genre"]
-        }
-    else:
-        return {
-            "poster": None,
-            "plot": "No description available",
-            "genre": "N/A"
-        }
+    return data if data["Response"] == "True" else None
 
 # ---------------- CSS ----------------
 st.markdown("""
 <style>
 
-body {
-    background-color: #0f172a;
+/* Remove padding */
+.block-container {
+    padding: 1rem 2rem;
 }
 
-/* Card Design */
-.movie-card {
-    background: #1e293b;
-    border-radius: 15px;
-    padding: 15px;
+/* HERO */
+.hero {
+    position: relative;
+    height: 400px;
+    border-radius: 20px;
+    overflow: hidden;
+    margin-bottom: 30px;
+}
+
+.hero img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: brightness(40%);
+}
+
+.hero-content {
+    position: absolute;
+    bottom: 30px;
+    left: 30px;
     color: white;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+}
+
+.hero h1 {
+    font-size: 40px;
+}
+
+/* ROW TITLE */
+.row-title {
+    font-size: 22px;
+    margin: 20px 0 10px 10px;
+    color: white;
+}
+
+/* HORIZONTAL SCROLL */
+.scroll-container {
+    display: flex;
+    overflow-x: auto;
+    gap: 15px;
+    padding: 10px;
+}
+
+.scroll-container::-webkit-scrollbar {
+    display: none;
+}
+
+/* MOVIE CARD */
+.movie {
+    min-width: 180px;
     transition: 0.3s;
 }
 
-.movie-card:hover {
-    transform: translateY(-5px);
-}
-
-/* Text Styling */
-.title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #ffffff;
-}
-
-.meta {
-    color: #cbd5e1;
-    font-size: 14px;
-}
-
-/* Input */
-.stTextInput input {
-    background-color: #1e293b !important;
-    color: white !important;
-}
-
-/* Button */
-.stButton button {
-    background: linear-gradient(90deg, #6366f1, #8b5cf6);
-    color: white;
+.movie img {
     border-radius: 10px;
-    height: 45px;
+}
+
+.movie:hover {
+    transform: scale(1.15);
+}
+
+/* SEARCH */
+.stTextInput input {
+    background-color: #111827 !important;
+    color: white !important;
+    border-radius: 10px;
+}
+
+.stButton button {
+    background: red;
+    color: white;
+    border-radius: 8px;
+}
+
+/* BACKGROUND */
+body {
+    background-color: #0b0f1a;
+    color: white;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- LOAD DATA ----------------
+# ---------------- DATA ----------------
 @st.cache_data
-def load_data():
+def load():
     df = pd.read_csv("movies.csv")
-    df["Summary"] = df["Summary"].fillna("").str.lower().str.strip()
-    df["Film Name"] = df["Film Name"].str.replace(r"[^a-zA-Z\s]", "", regex=True)
-    df = df.dropna(subset=["Summary"]).reset_index(drop=True)
+    df["Summary"] = df["Summary"].fillna("").str.lower()
     return df
 
-df = load_data()
+df = load()
 
 # ---------------- MODEL ----------------
 @st.cache_resource
-def load_model(data):
+def model(data):
     tfidf = TfidfVectorizer(stop_words="english")
-    tf_matrix = tfidf.fit_transform(data["Summary"])
+    matrix = tfidf.fit_transform(data["Summary"])
 
-    knn = NearestNeighbors(n_neighbors=6, metric="cosine", algorithm="brute")
-    knn.fit(tf_matrix)
+    knn = NearestNeighbors(n_neighbors=6, metric="cosine")
+    knn.fit(matrix)
+    return matrix, knn
 
-    return tf_matrix, knn
-
-tf_matrix, knn = load_model(df)
+matrix, knn = model(df)
 
 # ---------------- RECOMMEND ----------------
-def recommend(movie_name):
-    movie_name = movie_name.lower().strip()
-    movie_list = df['Film Name'].str.lower().str.strip().values
+def recommend(movie):
+    movie = movie.lower()
 
-    if movie_name not in movie_list:
+    if movie not in df["Film Name"].str.lower().values:
         return None
 
-    index = df[df['Film Name'].str.lower().str.strip() == movie_name].index[0]
-    distances, indices = knn.kneighbors(tf_matrix[index])
+    idx = df[df["Film Name"].str.lower() == movie].index[0]
+    _, indices = knn.kneighbors(matrix[idx])
 
-    results = []
-    for i in range(1, len(indices[0])):
-        movie_index = indices[0][i]
+    return [df.iloc[i]["Film Name"] for i in indices[0][1:]]
 
-        results.append({
-            "name": df.iloc[movie_index]["Film Name"],
-            "rating": df.iloc[movie_index]["Ratings"],
-            "year": df.iloc[movie_index]["Year"]
-        })
+# ---------------- HERO ----------------
+featured = df.sample(1)["Film Name"].values[0]
+hero_data = fetch_movie(featured)
 
-    return results
-
-# ---------------- HEADER ----------------
-st.title("🎬 AI Movie Recommender")
-st.markdown("Discover movies with **AI-powered recommendations**")
+if hero_data and hero_data["Poster"] != "N/A":
+    st.markdown(f"""
+    <div class="hero">
+        <img src="{hero_data['Poster']}">
+        <div class="hero-content">
+            <h1>{featured}</h1>
+            <p>{hero_data['Plot'][:150]}...</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ---------------- SEARCH ----------------
 col1, col2 = st.columns([4,1])
 
 with col1:
-    movie_input = st.text_input("🔍 Enter movie name")
+    movie_input = st.text_input("🔍 Search movie")
 
 with col2:
     st.write("")
-    st.write("")
     search = st.button("Recommend")
 
-# ---------------- RESULTS ----------------
+# ---------------- RECOMMENDED ROW ----------------
 if search and movie_input:
-    results = recommend(movie_input)
+    recs = recommend(movie_input)
 
-    if results is None:
-        st.error("Movie not found")
-    else:
-        st.success(f"Recommendations for {movie_input}")
+    if recs:
+        st.markdown('<div class="row-title">Recommended</div>', unsafe_allow_html=True)
 
-        cols = st.columns(3)
+        html = '<div class="scroll-container">'
 
-        for i, movie in enumerate(results):
-            data = fetch_movie_data(movie["name"])
-
-            with cols[i % 3]:
-
-                if data["poster"] and data["poster"] != "N/A":
-                    st.image(data["poster"])
-
-                st.markdown(f"""
-                <div class="movie-card">
-                    <div class="title">{movie['name']}</div>
-                    <div class="meta">⭐ {movie['rating']} | 📅 {movie['year']}</div>
-                    <div class="meta">🎭 {data['genre']}</div>
-                    <div class="meta">{data['plot'][:120]}...</div>
+        for name in recs:
+            data = fetch_movie(name)
+            if data and data["Poster"] != "N/A":
+                html += f"""
+                <div class="movie">
+                    <img src="{data['Poster']}" width="180">
                 </div>
-                """, unsafe_allow_html=True)
+                """
 
-# ---------------- FOOTER ----------------
-st.markdown("---")
-st.caption("✨ Built with Streamlit | Free Movie API")
+        html += '</div>'
+        st.markdown(html, unsafe_allow_html=True)
+
+# ---------------- POPULAR ROW ----------------
+st.markdown('<div class="row-title">🔥 Popular</div>', unsafe_allow_html=True)
+
+html = '<div class="scroll-container">'
+
+for name in df.sample(10)["Film Name"]:
+    data = fetch_movie(name)
+    if data and data["Poster"] != "N/A":
+        html += f"""
+        <div class="movie">
+            <img src="{data['Poster']}" width="180">
+        </div>
+        """
+
+html += '</div>'
+st.markdown(html, unsafe_allow_html=True)
