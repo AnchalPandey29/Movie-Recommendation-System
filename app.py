@@ -9,7 +9,11 @@ from sklearn.neighbors import NearestNeighbors
 st.set_page_config(page_title="🎬 Movie AI", layout="wide")
 
 WATCHLIST_FILE = "watchlist.json"
-PLACEHOLDER = "https://via.placeholder.com/300x450?text=No+Poster"
+PLACEHOLDER = "https://dummyimage.com/300x450/cccccc/000000&text=No+Poster"
+
+# ---------------- STATE ----------------
+if "selected_movie" not in st.session_state:
+    st.session_state.selected_movie = None
 
 # ---------------- WATCHLIST ----------------
 def load_watchlist():
@@ -28,35 +32,42 @@ watchlist = load_watchlist()
 # ---------------- API ----------------
 def fetch_movie(name):
     url = f"http://www.omdbapi.com/?t={name}&apikey=thewdb"
-    data = requests.get(url).json()
-    return data if data.get("Response") == "True" else None
+    try:
+        data = requests.get(url).json()
+        return data if data.get("Response") == "True" else None
+    except:
+        return None
 
-def get_trailer(movie):
+# ✅ EMBED TRAILER FIX
+def get_trailer_embed(movie):
     query = movie.replace(" ", "+") + "+trailer"
-    return f"https://www.youtube.com/results?search_query={query}"
+    return f"https://www.youtube.com/embed?listType=search&list={query}"
 
 # ---------------- STYLE ----------------
 st.markdown("""
 <style>
-.block-container { padding: 1.5rem 3rem; }
+.hero {
+    padding: 30px;
+    border-radius: 20px;
+    background: linear-gradient(135deg,#0f172a,#020617);
+    color: white;
+    text-align: center;
+    margin-bottom: 20px;
+}
 
 .card {
     background: #111827;
-    padding: 15px;
-    border-radius: 15px;
+    padding: 12px;
+    border-radius: 12px;
     color: white;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.4);
     text-align: center;
-    transition: 0.3s;
 }
-.card:hover { transform: translateY(-5px); }
 
-.title { font-size: 16px; font-weight: 600; }
-
-.stButton button {
-    background: linear-gradient(90deg,#6366f1,#8b5cf6);
-    color: white;
-    border-radius: 8px;
+.details-box {
+    background: #f3f4f6;
+    padding: 20px;
+    border-radius: 15px;
+    margin-top: 20px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -105,14 +116,22 @@ def recommend(movie):
 
     return [df.iloc[i]["Film Name"].title() for i in indices[0][1:]]
 
+# ---------------- HERO ----------------
+st.markdown("""
+<div class="hero">
+    <h1>🎬 Movie Recommendation System</h1>
+    <p>Discover movies with AI-powered suggestions</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ---------------- SEARCH ----------------
+search = st.text_input("🔍 Search for a movie")
+
 # ---------------- TABS ----------------
 tab1, tab2, tab3 = st.tabs(["🎯 Recommendations", "❤️ Watchlist", "📊 Analytics"])
 
 # ================= TAB 1 =================
 with tab1:
-    st.title("🎬 Movie Recommender")
-
-    search = st.text_input("🔍 Search a movie")
 
     if search:
         recs = recommend(search)
@@ -130,36 +149,55 @@ with tab1:
                 with cols[i % 5]:
                     st.image(poster)
 
-                    st.markdown(f"""
-                    <div class="card">
-                        <div class="title">{movie}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f"<div class='card'>{movie}</div>", unsafe_allow_html=True)
 
-                    with st.expander("Details"):
-                        if data:
-                            st.write(f"⭐ {data.get('imdbRating','N/A')}")
-                            st.write(f"🎭 {data.get('Genre','')}")
-                            st.write(f"📅 {data.get('Year','')}")
-                            st.write(data.get("Plot",""))
+                    if st.button("View Details", key=f"view_{i}"):
+                        st.session_state.selected_movie = movie
 
-                            st.markdown(f"[▶ Watch Trailer]({get_trailer(movie)})")
+    # ✅ DETAILS PANEL
+    if st.session_state.selected_movie:
+        movie = st.session_state.selected_movie
+        data = fetch_movie(movie)
 
-                    # ❤️ Watchlist
-                    if movie not in watchlist:
-                        if st.button("❤️ Add", key=f"add_{i}"):
-                            watchlist.append(movie)
-                            save_watchlist(watchlist)
-                            st.success("Added")
-                    else:
-                        if st.button("❌ Remove", key=f"remove_{i}"):
-                            watchlist.remove(movie)
-                            save_watchlist(watchlist)
-                            st.warning("Removed")
+        if data:
+            st.markdown("<div class='details-box'>", unsafe_allow_html=True)
+
+            col1, col2 = st.columns([1,2])
+
+            poster = PLACEHOLDER
+            if data.get("Poster") != "N/A":
+                poster = data["Poster"]
+
+            with col1:
+                st.image(poster)
+
+            with col2:
+                st.subheader(movie)
+                st.write(f"⭐ {data.get('imdbRating','N/A')}")
+                st.write(f"🎭 {data.get('Genre','')}")
+                st.write(f"📅 {data.get('Year','')}")
+                st.write(data.get("Plot",""))
+
+                st.markdown("### 🎥 Trailer")
+                st.components.v1.iframe(get_trailer_embed(movie), height=300)
+
+                # Watchlist
+                if movie not in watchlist:
+                    if st.button("❤️ Add to Watchlist"):
+                        watchlist.append(movie)
+                        save_watchlist(watchlist)
+                        st.success("Added")
+                else:
+                    if st.button("❌ Remove"):
+                        watchlist.remove(movie)
+                        save_watchlist(watchlist)
+                        st.warning("Removed")
+
+            st.markdown("</div>", unsafe_allow_html=True)
 
 # ================= TAB 2 =================
 with tab2:
-    st.title("❤️ Your Watchlist")
+    st.subheader("❤️ Your Watchlist")
 
     if watchlist:
         cols = st.columns(5)
@@ -175,20 +213,22 @@ with tab2:
                 st.image(poster)
                 st.write(movie)
     else:
-        st.info("No movies added yet")
+        st.info("No movies yet")
 
 # ================= TAB 3 =================
 with tab3:
-    st.title("📊 Movie Insights")
+    st.subheader("📊 Analytics Dashboard")
 
-    # Ratings distribution
     df_plot = pd.read_csv("movies.csv")
     df_plot["Ratings"] = pd.to_numeric(df_plot["Ratings"], errors="coerce")
 
-    st.subheader("Ratings Distribution")
-    st.bar_chart(df_plot["Ratings"].value_counts().sort_index())
+    col1, col2 = st.columns(2)
 
-    # Top movies
-    st.subheader("Top Rated Movies")
-    top = df_plot.sort_values(by="Ratings", ascending=False).head(10)
-    st.dataframe(top[["Film Name", "Ratings"]])
+    with col1:
+        st.markdown("### Ratings Distribution")
+        st.bar_chart(df_plot["Ratings"].value_counts().sort_index())
+
+    with col2:
+        st.markdown("### Top Rated Movies")
+        top = df_plot.sort_values(by="Ratings", ascending=False).head(10)
+        st.dataframe(top[["Film Name", "Ratings"]])
